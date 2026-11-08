@@ -5,3 +5,4 @@ pandas
 Pillow
 scikit-learn
 plotly
+huggingface_hub==0.36.2
