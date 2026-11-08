@@ -556,8 +556,14 @@ elif page == "MRI Prediction":
         if uploaded_file is not None:
             try:
                 image = Image.open(uploaded_file).convert("RGB")
-                # Fix: Remove width=None so Streamlit uses default sizing
-                st.image(image, caption="Uploaded MRI image")
+                
+                # Fix: Convert Pillow image to bytes to render correctly in st.image
+                import io
+                buf = io.BytesIO()
+                image.save(buf, format="JPEG")
+                byte_im = buf.getvalue()
+
+                st.image(byte_im, caption="Uploaded MRI image")
                 st.caption(f"Original dimensions: {image.width} × {image.height}")
             except Exception as exc:
                 st.error(f"Could not read this image: {exc}")
