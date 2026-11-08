@@ -1,9 +1,18 @@
+import base64
+import io
 import os
 from pathlib import Path
+
+# Must be set BEFORE huggingface_hub is imported. Xet-based downloads fail on
+# some hosts (HfHubHTTPError in refresh_xet_connection_info); this forces the
+# standard HTTP download instead.
+os.environ.setdefault("HF_HUB_DISABLE_XET", "1")
+os.environ.setdefault("HF_HUB_ENABLE_HF_TRANSFER", "0")
 
 import numpy as np
 import pandas as pd
 import streamlit as st
+import streamlit.components.v1 as components
 import tensorflow as tf
 import plotly.express as px
 import plotly.graph_objects as go
@@ -22,7 +31,7 @@ from huggingface_hub import snapshot_download
 # PAGE CONFIGURATION
 # =========================================================
 st.set_page_config(
-    page_title="Cortexa | Brain MRI Analysis",
+    page_title="Cortexaa | Brain MRI Analysis",
     page_icon="🧠",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -42,20 +51,50 @@ DATASET_PATH = Path(os.environ.get("BRISC_PATH", str(BASE_DIR / "brisc2025")))
 TRAIN_PATH = DATASET_PATH / "classification_task" / "train"
 
 
-@st.cache_resource
-def download_test_dataset():
-    """Download the BRISC test split from the Hugging Face dataset repository."""
-    return snapshot_download(
-        repo_id="Gurukant12345/brisc2025-test",
-        repo_type="dataset",
-    )
-
-
-TEST_PATH = Path(download_test_dataset())
-
 IMG_SIZE = (224, 224)
 BATCH_SIZE = 32
 FALLBACK_CLASSES = ["glioma", "meningioma", "no_tumor", "pituitary"]
+HF_DATASET_REPO = "Gurukant12345/brisc2025-test"
+
+
+def find_class_root(root):
+    """Return the folder that directly contains the class sub-folders
+    (glioma / meningioma / no_tumor / pituitary), wherever it is nested."""
+    root = Path(root)
+    expected = set(FALLBACK_CLASSES)
+    candidates = [root] + [p for p in root.rglob("*") if p.is_dir()]
+    for folder in candidates:
+        if folder.name.startswith("."):
+            continue
+        subdirs = {p.name for p in folder.iterdir() if p.is_dir()}
+        if len(expected & subdirs) >= 2:
+            return folder
+    return root
+
+
+@st.cache_resource(show_spinner="Downloading test dataset from Hugging Face...")
+def download_test_dataset():
+    """Download the BRISC test split from the Hugging Face dataset repository."""
+    token = None
+    try:
+        token = st.secrets.get("HF_TOKEN", None)  # only needed if repo is private
+    except Exception:
+        token = os.environ.get("HF_TOKEN")
+    local_dir = snapshot_download(
+        repo_id=HF_DATASET_REPO,
+        repo_type="dataset",
+        token=token,
+    )
+    return str(find_class_root(local_dir))
+
+
+def get_test_path():
+    """Download lazily (only when the dashboard needs it).
+    Returns (path, error_message)."""
+    try:
+        return Path(download_test_dataset()), None
+    except Exception as exc:  # network / auth / repo errors
+        return Path("__missing__"), f"{type(exc).__name__}: {exc}"
 
 
 # =========================================================
@@ -341,6 +380,30 @@ def metric_card(label, value, caption=""):
     )
 
 
+def show_image(pil_image, caption=""):
+    """Show a PIL image by embedding it as base64, so it works even when
+    Streamlit's media-file server fails (the cause of broken previews)."""
+    preview = pil_image.copy()
+    preview.thumbnail((700, 700))
+    buffer = io.BytesIO()
+    preview.save(buffer, format="JPEG", quality=90)
+    encoded = base64.b64encode(buffer.getvalue()).decode("utf-8")
+    # An iframe component is not passed through Streamlit's Markdown
+    # sanitiser (which can strip data: images) and does not use the media
+    # server, so it renders reliably.
+    components.html(
+        f"""
+<div style="text-align:center;font-family:sans-serif;">
+<img src="data:image/jpeg;base64,{encoded}"
+style="max-width:100%;max-height:430px;border-radius:14px;
+border:1px solid rgba(148,163,184,.25);" />
+<div style="color:#9aacc8;font-size:13px;margin-top:8px;">{caption}</div>
+</div>
+""",
+        height=490,
+    )
+
+
 def get_class_names():
     if TRAIN_PATH.exists():
         names = sorted(p.name for p in TRAIN_PATH.iterdir() if p.is_dir())
@@ -431,6 +494,7 @@ with st.sidebar:
         st.error("EfficientNetB0 model file missing")
 
     html('<div class="muted">BRISC 2025 · Four-class classification</div>')
+    st.caption("Build: v4 · iframe preview + lazy HF download")
 
 
 # =========================================================
@@ -552,7 +616,7 @@ elif page == "MRI Prediction":
         if uploaded_file is not None:
             try:
                 image = Image.open(uploaded_file).convert("RGB")
-                st.image(image, caption="Uploaded MRI image", use_container_width=True)
+                show_image(image, "Uploaded MRI image")
                 st.caption(f"Original dimensions: {image.width} × {image.height}")
             except Exception as exc:
                 st.error(f"Could not read this image: {exc}")
@@ -671,10 +735,14 @@ elif page == "Model Dashboard":
         "EVALUATION & ANALYTICS",
     )
 
+    TEST_PATH, DATASET_ERROR = get_test_path()
+
     if not TEST_PATH.exists():
         st.warning(
-            f"Test directory not found: {TEST_PATH}\n\n"
-            "Place the BRISC 2025 classification test folder in the configured dataset directory."
+            f"Could not load the test dataset from Hugging Face ({HF_DATASET_REPO}).\n\n"
+            f"Details: {DATASET_ERROR}\n\n"
+            "Check that the repo name is correct and is a *dataset* repo. "
+            "If it is private, add HF_TOKEN to your app secrets."
         )
         st.stop()
 
