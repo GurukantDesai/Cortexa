@@ -16,6 +16,11 @@ from sklearn.metrics import (
     recall_score,
     f1_score,
 )
+
+import os
+
+os.environ["HF_HUB_DISABLE_XET"] = "1"
+
 from huggingface_hub import snapshot_download
 
 # =========================================================
@@ -44,12 +49,11 @@ TRAIN_PATH = DATASET_PATH / "classification_task" / "train"
 
 @st.cache_resource
 def download_test_dataset():
-    """Download the BRISC test split from the Hugging Face dataset repository."""
     return snapshot_download(
         repo_id="Gurukant12345/brisc2025-test",
         repo_type="dataset",
+        max_workers=4
     )
-
 
 TEST_PATH = Path(download_test_dataset())
 
