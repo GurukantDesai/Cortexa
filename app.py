@@ -31,7 +31,7 @@ from huggingface_hub import snapshot_download
 # PAGE CONFIGURATION
 # =========================================================
 st.set_page_config(
-    page_title="Cortexa | Brain MRI Analysis",
+    page_title="Cortexaa | Brain MRI Analysis",
     page_icon="🧠",
     layout="wide",
     initial_sidebar_state="expanded",
