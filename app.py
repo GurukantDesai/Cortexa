@@ -555,15 +555,11 @@ elif page == "MRI Prediction":
         image = None
         if uploaded_file is not None:
             try:
+                # Read raw bytes directly for preview and open with PIL for model inference
+                bytes_data = uploaded_file.getvalue()
                 image = Image.open(uploaded_file).convert("RGB")
                 
-                # Fix: Convert Pillow image to bytes to render correctly in st.image
-                import io
-                buf = io.BytesIO()
-                image.save(buf, format="JPEG")
-                byte_im = buf.getvalue()
-
-                st.image(byte_im, caption="Uploaded MRI image")
+                st.image(bytes_data, caption="Uploaded MRI image", width="stretch")
                 st.caption(f"Original dimensions: {image.width} × {image.height}")
             except Exception as exc:
                 st.error(f"Could not read this image: {exc}")
