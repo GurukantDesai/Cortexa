@@ -556,8 +556,8 @@ elif page == "MRI Prediction":
         if uploaded_file is not None:
             try:
                 image = Image.open(uploaded_file).convert("RGB")
-                # Fix: Pass the image directly without use_container_width or use use_column_width="always"
-                st.image(image, caption="Uploaded MRI image", width=None)
+                # Fix: Remove width=None so Streamlit uses default sizing
+                st.image(image, caption="Uploaded MRI image")
                 st.caption(f"Original dimensions: {image.width} × {image.height}")
             except Exception as exc:
                 st.error(f"Could not read this image: {exc}")
