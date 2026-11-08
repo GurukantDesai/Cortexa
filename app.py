@@ -1,3 +1,5 @@
+import base64
+import io
 import os
 from pathlib import Path
 
@@ -16,11 +18,6 @@ from sklearn.metrics import (
     recall_score,
     f1_score,
 )
-
-import os
-
-os.environ["HF_HUB_DISABLE_XET"] = "1"
-
 from huggingface_hub import snapshot_download
 
 # =========================================================
@@ -49,11 +46,12 @@ TRAIN_PATH = DATASET_PATH / "classification_task" / "train"
 
 @st.cache_resource
 def download_test_dataset():
+    """Download the BRISC test split from the Hugging Face dataset repository."""
     return snapshot_download(
         repo_id="Gurukant12345/brisc2025-test",
         repo_type="dataset",
-        max_workers=4
     )
+
 
 TEST_PATH = Path(download_test_dataset())
 
@@ -345,6 +343,25 @@ def metric_card(label, value, caption=""):
     )
 
 
+def show_image(pil_image, caption=""):
+    """Show a PIL image by embedding it as base64, so it works even when
+    Streamlit's media-file server fails (the cause of broken previews)."""
+    preview = pil_image.copy()
+    preview.thumbnail((900, 900))
+    buffer = io.BytesIO()
+    preview.save(buffer, format="PNG")
+    encoded = base64.b64encode(buffer.getvalue()).decode("utf-8")
+    html(
+        f"""
+<div style="text-align:center;margin:8px 0 4px;">
+<img src="data:image/png;base64,{encoded}"
+style="max-width:100%;border-radius:14px;border:1px solid rgba(148,163,184,.18);" />
+<div style="color:#9aacc8;font-size:13px;margin-top:8px;">{caption}</div>
+</div>
+"""
+    )
+
+
 def get_class_names():
     if TRAIN_PATH.exists():
         names = sorted(p.name for p in TRAIN_PATH.iterdir() if p.is_dir())
@@ -556,7 +573,7 @@ elif page == "MRI Prediction":
         if uploaded_file is not None:
             try:
                 image = Image.open(uploaded_file).convert("RGB")
-                st.image(image, caption="Uploaded MRI image", use_container_width=True)
+                show_image(image, "Uploaded MRI image")
                 st.caption(f"Original dimensions: {image.width} × {image.height}")
             except Exception as exc:
                 st.error(f"Could not read this image: {exc}")
